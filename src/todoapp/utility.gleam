@@ -1,5 +1,6 @@
 import gleam/http.{type Method}
 import gleam/list
+import gleam/erlang/os
 import wisp.{type Request, type Response}
 
 pub fn require_methods(
