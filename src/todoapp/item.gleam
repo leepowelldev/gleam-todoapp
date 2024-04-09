@@ -1,11 +1,14 @@
 import gleam/option.{type Option}
 import gleam/result
 import gleam/list
-import gleam/io
+import gleam/int
+import gleam/bool
+import gleam/string
 import gleam/json.{type Json}
 import gleam/dynamic.{type DecodeError, type Dynamic}
+import sqlight.{type Error, type Value}
 import todoapp/error.{type AppError}
-import sqlight
+import todoapp/web
 
 pub type Item {
   Item(
@@ -17,55 +20,148 @@ pub type Item {
   )
 }
 
-pub type CreateItemDto {
-  CreateItemDto(content: String)
+pub type CreateDto {
+  CreateDto(content: String)
 }
 
-pub type UpdateItemDto {
-  UpdateItemDto(content: Option(String), completed: Option(Bool))
+pub type UpdateDto {
+  UpdateDto(id: Int, content: Option(String), completed: Option(Bool))
 }
 
-pub fn get_items(db: sqlight.Connection) -> Result(List(Item), AppError) {
-  let sql = "select id, content, completed, created_at, updated_at from items;"
+pub fn get_all(db: sqlight.Connection) -> Result(List(Item), AppError) {
+  let sql = "SELECT id, content, completed, created_at, updated_at FROM items;"
 
-  sqlight.query(sql, on: db, with: [], expecting: decode_item_row)
-  |> result.map_error(fn(error) {
-    io.debug(error)
-    error.SqlightError(error)
-  })
+  web.normalize_sql_error(sqlight.query(
+    sql,
+    on: db,
+    with: [],
+    expecting: decode_from_row,
+  ))
 }
 
-pub fn insert_item(
-  data: CreateItemDto,
-  db: sqlight.Connection,
-) -> Result(Item, AppError) {
+pub fn get(id: String, db: sqlight.Connection) -> Result(Item, AppError) {
   let sql =
-    "insert into items (content) values (?1) returning id, content, completed, created_at, updated_at;"
+    "SELECT id, content, completed, created_at, updated_at FROM items where id = ?1;"
 
-  use rows <- result.then(
-    sqlight.query(
+  use rows <- result.try(
+    web.normalize_sql_error(sqlight.query(
       sql,
       on: db,
-      with: [sqlight.text(data.content)],
-      expecting: decode_item_row,
-    )
-    |> result.map_error(fn(error) {
-      io.debug(error)
-      error.SqlightError(error)
-    }),
+      with: [sqlight.text(id)],
+      expecting: decode_from_row,
+    )),
   )
 
-  case list.first(rows) {
-    Ok(item) -> Ok(item)
-    Error(_) -> Error(error.Unexpected)
+  case rows {
+    [item] -> Ok(item)
+    _ -> Error(error.Unexpected)
   }
 }
 
-pub fn encode_items(items: List(Item)) -> Json {
-  json.array(items, encode_item)
+pub fn insert(data: CreateDto, db: sqlight.Connection) -> Result(Item, AppError) {
+  let sql =
+    "INSERT INTO items (content) VALUES (?1) RETURNING id, content, completed, created_at, updated_at;"
+
+  use rows <- result.try(
+    web.normalize_sql_error(sqlight.query(
+      sql,
+      on: db,
+      with: [sqlight.text(data.content)],
+      expecting: decode_from_row,
+    )),
+  )
+
+  case rows {
+    [item] -> Ok(item)
+    _ -> Error(error.Unexpected)
+  }
 }
 
-pub fn encode_item(item: Item) -> Json {
+fn build_query_value(
+  value: Option(a),
+  sqlight_type: fn(a) -> Value,
+  parts: List(String),
+  with: List(Value),
+  index: Int,
+) -> #(List(String), List(Value), Int) {
+  case value {
+    option.Some(value) -> #(
+      list.append(parts, ["content = ?" <> int.to_string(index)]),
+      list.append(with, [sqlight_type(value)]),
+      index + 1,
+    )
+    option.None -> #(parts, with, index)
+  }
+}
+
+fn bool_to_sqlight_int(value: Bool) {
+  bool.to_int(value)
+  |> sqlight.int
+}
+
+pub fn update(data: UpdateDto, db: sqlight.Connection) -> Result(Item, AppError) {
+  let index = 2
+  let with = [sqlight.int(data.id)]
+  let parts: List(String) = []
+
+  let #(parts, with, index) =
+    build_query_value(data.content, sqlight.text, parts, with, index)
+  let #(parts, with, _) =
+    build_query_value(data.completed, bool_to_sqlight_int, parts, with, index)
+
+  // If no content and no completed data is sent parts will be empty and will create an invalid SQL query
+  case parts {
+    [] -> Error(error.UnprocessableEntity)
+    _ -> Ok(Nil)
+  }
+  |> result.try(fn(_) {
+    let sql =
+      "UPDATE items SET "
+      <> string.join(parts, ", ")
+      <> ", updated_at = CURRENT_TIMESTAMP WHERE id = ?1 returning id, content, completed, created_at, updated_at;"
+
+    use rows <- result.try(
+      web.normalize_sql_error(sqlight.query(
+        sql,
+        on: db,
+        with: with,
+        expecting: decode_from_row,
+      )),
+    )
+
+    case rows {
+      [item] -> Ok(item)
+      [] -> Error(error.NotFound)
+      _ -> Error(error.Unexpected)
+    }
+  })
+}
+
+pub fn delete(id: Int, db: sqlight.Connection) -> Result(Item, AppError) {
+  let sql =
+    "DELETE FROM items WHERE id = ?1 returning id, content, completed, created_at, updated_at;"
+
+  use rows <- result.try(
+    web.normalize_sql_error(sqlight.query(
+      sql,
+      on: db,
+      with: [sqlight.int(id)],
+      expecting: decode_from_row,
+    )),
+  )
+
+  case rows {
+    [item] -> Ok(item)
+    [] -> Error(error.NotFound)
+    _ -> Error(error.Unexpected)
+  }
+}
+
+pub fn encode_all(items: List(Item)) -> Json {
+  json.array(items, encode)
+}
+
+pub fn encode(item: Item) -> Json {
   json.object([
     #("id", json.int(item.id)),
     #("content", json.string(item.content)),
@@ -75,7 +171,7 @@ pub fn encode_item(item: Item) -> Json {
   ])
 }
 
-pub fn decode_item_row(data: Dynamic) -> Result(Item, List(DecodeError)) {
+pub fn decode_from_row(data: Dynamic) -> Result(Item, List(DecodeError)) {
   dynamic.decode5(
     Item,
     dynamic.element(0, dynamic.int),
@@ -86,8 +182,43 @@ pub fn decode_item_row(data: Dynamic) -> Result(Item, List(DecodeError)) {
   )(data)
 }
 
-pub fn decode_create_item_dto(
-  data: Dynamic,
-) -> Result(CreateItemDto, List(DecodeError)) {
-  dynamic.decode1(CreateItemDto, dynamic.field("content", dynamic.string))(data)
+pub fn decode_create_dto(data: Dynamic) -> Result(CreateDto, List(DecodeError)) {
+  dynamic.decode1(CreateDto, dynamic.field("content", decode_content))(data)
+}
+
+pub fn decode_update_dto(data: Dynamic) -> Result(UpdateDto, List(DecodeError)) {
+  dynamic.decode3(
+    UpdateDto,
+    dynamic.field("id", dynamic.int),
+    dynamic.optional_field("content", decode_content),
+    dynamic.optional_field("completed", dynamic.bool),
+  )(data)
+}
+
+fn decode_content(data: Dynamic) -> Result(String, List(DecodeError)) {
+  dynamic.string(data)
+  |> result.try(fn(data) {
+    let length = string.length(data)
+    case length > 1 && length <= 50 {
+      True -> Ok(data)
+      False ->
+        Error([
+          dynamic.DecodeError(
+            "Length to be between 1 and 50 characters",
+            int.to_string(length),
+            [],
+          ),
+        ])
+    }
+  })
+}
+
+pub fn to_json(item: Item) {
+  let json = encode(item)
+  json.to_string_builder(json)
+}
+
+pub fn all_to_json(items: List(Item)) {
+  let json = encode_all(items)
+  json.to_string_builder(json)
 }

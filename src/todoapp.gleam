@@ -5,11 +5,14 @@ import gleam/erlang/os
 import gleam/result
 import gleam/int
 import wisp
+// import radiate
 import todoapp/router
 import todoapp/database
 import todoapp/web
+import todoapp/utility
 
 pub fn main() {
+  use <- hot_reload(utility.is_dev())
   dotenv_gleam.config()
   wisp.configure_logger()
 
@@ -35,4 +38,16 @@ pub fn main() {
     |> mist.start_http
 
   process.sleep_forever()
+}
+
+fn hot_reload(is_dev: Bool, next: fn() -> a) -> a {
+  case is_dev {
+    True -> {
+      // radiate.new()
+      // |> radiate.add_dir("src")
+      // |> radiate.start()
+      next()
+    }
+    False -> next()
+  }
 }

@@ -19,7 +19,6 @@ packages = [
   { name = "simplifile", version = "1.5.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "simplifile", source = "hex", outer_checksum = "EB9AA8E65E5C1E3E0FDCFC81BC363FD433CB122D7D062750FFDF24DE4AC40116" },
   { name = "sqlight", version = "0.9.0", build_tools = ["gleam"], requirements = ["esqlite", "gleam_stdlib"], otp_app = "sqlight", source = "hex", outer_checksum = "2D9C9BA420A5E7DCE7DB2DAAE4CAB0BE6218BEB48FD1531C583550B3D1316E94" },
   { name = "thoas", version = "0.4.1", build_tools = ["rebar3"], requirements = [], otp_app = "thoas", source = "hex", outer_checksum = "4918D50026C073C4AB1388437132C77A6F6F7C8AC43C60C13758CC0ADCE2134E" },
-  { name = "valid", version = "0.4.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "valid", source = "hex", outer_checksum = "66928925DDE7861644F598D8A5BBBB4401AA69D617A98E06FF44D11A43ECBC98" },
   { name = "wisp", version = "0.12.0", build_tools = ["gleam"], requirements = ["exception", "gleam_crypto", "gleam_erlang", "gleam_http", "gleam_json", "gleam_stdlib", "logging", "marceau", "mist", "simplifile"], otp_app = "wisp", source = "hex", outer_checksum = "C180D7849D011C82E9D4D17DD856FD1325B5FDFA3C03E3E2B6593CF2F5CE156C" },
 ]
 
@@ -32,5 +31,4 @@ gleam_stdlib = { version = "~> 0.34 or ~> 1.0" }
 gleeunit = { version = "~> 1.0" }
 mist = { version = "~> 0.17" }
 sqlight = { version = "~> 0.9" }
-valid = { version = "~> 0.4"}
 wisp = { version = "~> 0.12" }

@@ -2,7 +2,7 @@ import sqlight.{type Connection}
 import todoapp/error.{type AppError}
 import gleam/result
 
-pub fn with_connection(name: String, next: fn(Connection) -> value) -> value {
+pub fn with_connection(name: String, next: fn(Connection) -> a) -> a {
   use conn <- sqlight.with_connection(name)
   let assert Ok(_) = sqlight.exec("pragma foreign_keys = on;", conn)
   next(conn)
@@ -13,27 +13,27 @@ pub fn with_connection(name: String, next: fn(Connection) -> value) -> value {
 pub fn migrate_schema(db: Connection) -> Result(Nil, AppError) {
   let sql =
     "
-  create table if not exists items (
-    id integer primary key autoincrement not null,
+  CREATE TABLE IF NOT EXISTS items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 
-    created_at text not null
-      default current_timestamp,
+    created_at TEXT NOT NULL
+      DEFAULT CURRENT_TIMESTAMP,
 
-    updated_at text not null
-      default current_timestamp,
+    updated_at TEXT NOT NULL
+      DEFAULT CURRENT_TIMESTAMP,
 
-    content text
-      not null
-      constraint empty_content check (content != ''),
+    content TEXT
+      NOT NULL
+      CONSTRAINT empty_content CHECK (content != ''),
 
-    completed integer
-      not null
-      default 0
+    completed INTEGER
+      NOT NULL
+      DEFAULT 0
   ) strict;
 
-  insert or ignore into items (id, content)
-  select 1, 'Collect shopping'
-  where not exists (select 1 from items where id = 1);
+  INSERT OR IGNORE INTO items (id, content)
+  SELECT 1, 'Collect shopping'
+  WHERE NOT EXISTS (SELECT 1 FROM items WHERE id = 1);
   "
 
   sqlight.exec(sql, db)

@@ -1,18 +1,15 @@
-version: '3.9'
-
 services:
   db:
     image: postgres
     restart: always
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: todos
-    ports:
-      - 5555:5432
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: todoapp
     volumes:
-      - db:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
 
 volumes:
-  db:
-    driver: local
+  pgdata:

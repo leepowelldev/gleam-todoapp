@@ -21,7 +21,6 @@ wisp = "~> 0.12"
 gleam_http = "~> 3.6"
 sqlight = "~> 0.9"
 gleam_json = "~> 1.0"
-valid = "~> 0.4"
 
 [dev-dependencies]
 gleeunit = "~> 1.0"

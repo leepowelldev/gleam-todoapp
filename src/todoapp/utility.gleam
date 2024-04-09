@@ -12,3 +12,17 @@ pub fn require_methods(
     False -> wisp.method_not_allowed(allowed: methods)
   }
 }
+
+pub fn get_env(fallback: String) -> String {
+  case os.get_env("GLEAM_ENV") {
+    Ok(value) -> value
+    Error(_) -> fallback
+  }
+}
+
+pub fn is_dev() -> Bool {
+  case os.get_env("GLEAM_ENV") {
+    Ok(value) -> value == "development"
+    Error(_) -> False
+  }
+}
