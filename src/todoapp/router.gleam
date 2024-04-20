@@ -5,19 +5,44 @@ import todoapp/web.{type Context}
 import todoapp/error
 import todoapp/item
 
-pub fn with_handle_request(request: Request, context: Context) -> Response {
+pub fn handle_request(request: Request, context: Context) -> Response {
+  use request <- middleware(request, context)
+
   case wisp.path_segments(request) {
-    [] -> home(request, context)
-    ["add"] -> add(request, context)
-    ["update"] -> update(request, context)
-    ["delete", id] -> delete(id, request, context)
+    [] -> index_route(request, context)
+    [id] -> item_route(id, request, context)
     _ -> wisp.not_found()
   }
 }
 
-fn home(request: Request, context: Context) -> Response {
-  use <- wisp.require_method(request, http.Get)
+pub fn middleware(
+  request: wisp.Request,
+  _context: Context,
+  next: fn(wisp.Request) -> wisp.Response,
+) -> wisp.Response {
+  use <- wisp.log_request(request)
+  use <- wisp.rescue_crashes
 
+  next(request)
+}
+
+fn index_route(request: Request, context: Context) -> Response {
+  case request.method {
+    http.Get -> all(request, context)
+    http.Post -> add(request, context)
+    _ -> wisp.method_not_allowed([http.Get, http.Post])
+  }
+}
+
+fn item_route(id: String, request: Request, context: Context) -> Response {
+  case request.method {
+    http.Patch -> update(id, request, context)
+    http.Delete -> delete(id, request, context)
+    _ -> wisp.method_not_allowed([http.Get, http.Post])
+  }
+}
+
+fn all(_request: Request, context: Context) -> Response {
   let result = {
     use items <- result.try(item.get_all(context.db))
     Ok(item.all_to_json(items))
@@ -31,7 +56,6 @@ fn home(request: Request, context: Context) -> Response {
 fn add(request: Request, context: Context) -> Response {
   wisp.set_max_body_size(request, 500)
 
-  use <- wisp.require_method(request, http.Post)
   use json <- wisp.require_json(request)
 
   let result = {
@@ -48,10 +72,11 @@ fn add(request: Request, context: Context) -> Response {
   wisp.json_response(json, 201)
 }
 
-fn update(request: Request, context: Context) -> Response {
+fn update(id: String, request: Request, context: Context) -> Response {
   wisp.set_max_body_size(request, 500)
 
   use <- wisp.require_method(request, http.Patch)
+  use id <- web.require_int_param(id)
   use json <- wisp.require_json(request)
 
   let result = {
@@ -59,7 +84,7 @@ fn update(request: Request, context: Context) -> Response {
       item.decode_update_dto(json)
       |> result.replace_error(error.UnprocessableEntity),
     )
-    use item <- result.try(item.update(data, context.db))
+    use item <- result.try(item.update(id, data, context.db))
     Ok(item.to_json(item))
   }
 

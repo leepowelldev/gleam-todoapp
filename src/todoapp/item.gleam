@@ -8,7 +8,6 @@ import gleam/json.{type Json}
 import gleam/dynamic.{type DecodeError, type Dynamic}
 import sqlight.{type Error, type Value}
 import todoapp/error.{type AppError}
-import todoapp/web
 
 pub type Item {
   Item(
@@ -17,6 +16,7 @@ pub type Item {
     completed: Bool,
     created_at: String,
     updated_at: String,
+    completed_at: Option(String),
   )
 }
 
@@ -25,68 +25,68 @@ pub type CreateDto {
 }
 
 pub type UpdateDto {
-  UpdateDto(id: Int, content: Option(String), completed: Option(Bool))
+  UpdateDto(content: Option(String), completed: Option(Bool))
 }
 
 pub fn get_all(db: sqlight.Connection) -> Result(List(Item), AppError) {
-  let sql = "SELECT id, content, completed, created_at, updated_at FROM items;"
+  let sql =
+    "SELECT id, content, completed, created_at, updated_at, completed_at FROM items;"
 
-  web.normalize_sql_error(sqlight.query(
-    sql,
-    on: db,
-    with: [],
-    expecting: decode_from_row,
-  ))
+  sqlight.query(sql, on: db, with: [], expecting: decode_from_row)
+  |> result.map_error(error.SqlightError)
 }
 
 pub fn get(id: String, db: sqlight.Connection) -> Result(Item, AppError) {
   let sql =
-    "SELECT id, content, completed, created_at, updated_at FROM items where id = ?1;"
+    "SELECT id, content, completed, created_at, updated_at, completed_at FROM items where id = ?1;"
 
   use rows <- result.try(
-    web.normalize_sql_error(sqlight.query(
+    sqlight.query(
       sql,
       on: db,
       with: [sqlight.text(id)],
       expecting: decode_from_row,
-    )),
+    )
+    |> result.map_error(error.SqlightError),
   )
 
   case rows {
     [item] -> Ok(item)
-    _ -> Error(error.Unexpected)
+    _ -> Error(error.Unexpected("Row not returned from query - " <> sql))
   }
 }
 
 pub fn insert(data: CreateDto, db: sqlight.Connection) -> Result(Item, AppError) {
   let sql =
-    "INSERT INTO items (content) VALUES (?1) RETURNING id, content, completed, created_at, updated_at;"
+    "INSERT INTO items (content) VALUES (?1) RETURNING id, content, completed, created_at, updated_at, completed_at;"
 
   use rows <- result.try(
-    web.normalize_sql_error(sqlight.query(
+    sqlight.query(
       sql,
       on: db,
       with: [sqlight.text(data.content)],
       expecting: decode_from_row,
-    )),
+    )
+    |> result.map_error(error.SqlightError),
   )
 
   case rows {
     [item] -> Ok(item)
-    _ -> Error(error.Unexpected)
+    _ -> Error(error.Unexpected("Row not returned from query - " <> sql))
   }
 }
 
-fn build_query_value(
-  value: Option(a),
-  sqlight_type: fn(a) -> Value,
+fn build_optional_query_value(
   parts: List(String),
   with: List(Value),
   index: Int,
+  value value: Option(a),
+  column column: String,
+  with_type sqlight_type: fn(a) -> Value,
 ) -> #(List(String), List(Value), Int) {
   case value {
     option.Some(value) -> #(
-      list.append(parts, ["content = ?" <> int.to_string(index)]),
+      list.append(parts, [column <> " = ?" <> int.to_string(index)]),
       list.append(with, [sqlight_type(value)]),
       index + 1,
     )
@@ -99,15 +99,33 @@ fn bool_to_sqlight_int(value: Bool) {
   |> sqlight.int
 }
 
-pub fn update(data: UpdateDto, db: sqlight.Connection) -> Result(Item, AppError) {
+pub fn update(
+  id: Int,
+  data: UpdateDto,
+  db: sqlight.Connection,
+) -> Result(Item, AppError) {
   let index = 2
-  let with = [sqlight.int(data.id)]
+  let with = [sqlight.int(id)]
   let parts: List(String) = []
 
   let #(parts, with, index) =
-    build_query_value(data.content, sqlight.text, parts, with, index)
+    build_optional_query_value(
+      parts,
+      with,
+      index,
+      value: data.content,
+      column: "content",
+      with_type: sqlight.text,
+    )
   let #(parts, with, _) =
-    build_query_value(data.completed, bool_to_sqlight_int, parts, with, index)
+    build_optional_query_value(
+      parts,
+      with,
+      index,
+      value: data.completed,
+      column: "completed",
+      with_type: bool_to_sqlight_int,
+    )
 
   // If no content and no completed data is sent parts will be empty and will create an invalid SQL query
   case parts {
@@ -118,42 +136,39 @@ pub fn update(data: UpdateDto, db: sqlight.Connection) -> Result(Item, AppError)
     let sql =
       "UPDATE items SET "
       <> string.join(parts, ", ")
-      <> ", updated_at = CURRENT_TIMESTAMP WHERE id = ?1 returning id, content, completed, created_at, updated_at;"
+      <> " WHERE id = ?1 returning id, content, completed, created_at, updated_at, completed_at;"
 
     use rows <- result.try(
-      web.normalize_sql_error(sqlight.query(
-        sql,
-        on: db,
-        with: with,
-        expecting: decode_from_row,
-      )),
+      sqlight.query(sql, on: db, with: with, expecting: decode_from_row)
+      |> result.map_error(error.SqlightError),
     )
 
     case rows {
       [item] -> Ok(item)
       [] -> Error(error.NotFound)
-      _ -> Error(error.Unexpected)
+      _ -> Error(error.Unexpected("Row not returned from query - " <> sql))
     }
   })
 }
 
 pub fn delete(id: Int, db: sqlight.Connection) -> Result(Item, AppError) {
   let sql =
-    "DELETE FROM items WHERE id = ?1 returning id, content, completed, created_at, updated_at;"
+    "DELETE FROM items WHERE id = ?1 returning id, content, completed, created_at, updated_at, completed_at;"
 
   use rows <- result.try(
-    web.normalize_sql_error(sqlight.query(
+    sqlight.query(
       sql,
       on: db,
       with: [sqlight.int(id)],
       expecting: decode_from_row,
-    )),
+    )
+    |> result.map_error(error.SqlightError),
   )
 
   case rows {
     [item] -> Ok(item)
     [] -> Error(error.NotFound)
-    _ -> Error(error.Unexpected)
+    _ -> Error(error.Unexpected("Row not returned from query - " <> sql))
   }
 }
 
@@ -168,17 +183,19 @@ pub fn encode(item: Item) -> Json {
     #("completed", json.bool(item.completed)),
     #("created_at", json.string(item.created_at)),
     #("updated_at", json.string(item.updated_at)),
+    #("completed_at", json.nullable(item.completed_at, json.string)),
   ])
 }
 
 pub fn decode_from_row(data: Dynamic) -> Result(Item, List(DecodeError)) {
-  dynamic.decode5(
+  dynamic.decode6(
     Item,
     dynamic.element(0, dynamic.int),
     dynamic.element(1, dynamic.string),
     dynamic.element(2, sqlight.decode_bool),
     dynamic.element(3, dynamic.string),
     dynamic.element(4, dynamic.string),
+    dynamic.element(5, dynamic.optional(dynamic.string)),
   )(data)
 }
 
@@ -187,9 +204,8 @@ pub fn decode_create_dto(data: Dynamic) -> Result(CreateDto, List(DecodeError)) 
 }
 
 pub fn decode_update_dto(data: Dynamic) -> Result(UpdateDto, List(DecodeError)) {
-  dynamic.decode3(
+  dynamic.decode2(
     UpdateDto,
-    dynamic.field("id", dynamic.int),
     dynamic.optional_field("content", decode_content),
     dynamic.optional_field("completed", dynamic.bool),
   )(data)

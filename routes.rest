@@ -2,10 +2,46 @@ GET http://localhost:8776/
 
 ###
 
-GET http://localhost:8776/ HTTP/1.1
+DELETE http://localhost:8776/
+
+###
+
+POST http://localhost:8776/ HTTP/1.1
 content-type: application/json
 
 {
-    "name": "sample",
-    "time": "Wed, 21 Oct 2015 18:27:50 GMT"
+    "content": "Wash clothes"
 }
+
+###
+
+POST http://localhost:8776/1 HTTP/1.1
+content-type: application/json
+
+###
+
+PATCH  http://localhost:8776/1 HTTP/1.1
+content-type: application/json
+
+{
+    "completed": true
+}
+
+
+###
+
+PATCH  http://localhost:8776/1 HTTP/1.1
+content-type: application/json
+
+{
+}
+
+###
+
+DELETE  http://localhost:8776/2 HTTP/1.1
+content-type: application/json
+
+###
+
+DELETE  http://localhost:8776/22 HTTP/1.1
+content-type: application/json

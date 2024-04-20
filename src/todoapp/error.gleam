@@ -3,6 +3,6 @@ import sqlight
 pub type AppError {
   NotFound
   UnprocessableEntity
-  Unexpected
+  Unexpected(String)
   SqlightError(sqlight.Error)
 }
